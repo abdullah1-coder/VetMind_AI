@@ -117,7 +117,7 @@ device_target = "cuda" if torch.cuda.is_available() else "cpu"
 logger.info("Initializing persistent HuggingFace embedding engine...")
 GLOBAL_EMBEDDINGS = HuggingFaceEmbeddings(
     model_name="all-MiniLM-L6-v2",
-    model_kwargs={"device": device_target, "local_files_only": True}
+    model_kwargs={"device": device_target, "local_files_only": False}
 )
 
 logger.info(f"Connecting to persistent Chroma Vector Store at: {VECTOR_DB_DIR}")
