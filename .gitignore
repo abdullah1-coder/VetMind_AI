@@ -1,0 +1,91 @@
+# ==========================================
+# 1. Environment Secrets & API Keys (CRITICAL)
+# ==========================================
+.env
+.env.*
+*.env
+!.env.example
+
+# ==========================================
+# 2. Heavy Data, PDFs & Medical Manuals
+# ==========================================
+*.pdf
+data/
+app/data/
+app/RAG/data/
+
+# ==========================================
+# 3. Vector Databases & SQLite Stores
+# ==========================================
+*.sqlite3
+*.db
+*.bin
+vetmind_records.db
+app/data/vector_store/*
+app/RAG/data/vector_store/*
+data/chroma_db/*
+chroma.sqlite3
+
+# ==========================================
+# 4. Generated Reports & User Uploads
+# ==========================================
+app/RAG/generated_reports/*
+app/RAG/agents/generated_reports/*
+app/database/data/uploads/*
+static/reports/*
+logs/*
+*.log
+
+# ==========================================
+# 5. Python Caches & Virtual Environments
+# ==========================================
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ==========================================
+# 6. Node.js & Frontend Build Outputs
+# ==========================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.cache/
+*.tsbuildinfo
+
+# ==========================================
+# 7. IDE, OS & System Files
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+ehthumbs.db
+Thumbs.db

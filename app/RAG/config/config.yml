@@ -1,0 +1,12 @@
+#%%
+# app/RAG/config/config.yml
+models:
+  - type: main
+    engine: groq
+    model: openai/gpt-oss-120b
+    parameters:
+      groq_api_key: ${GROQ_API_KEY}
+rails:
+  config:
+    enable_input_rails: true
+

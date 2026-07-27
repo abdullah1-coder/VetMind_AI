@@ -1,0 +1,46 @@
+# --- DISALLOWED / OFF-TOPIC INTENTS ---
+
+define user express off_topic
+  "Can you plan a trip to France?"
+  "Plan a vacation to Europe"
+  "What is the capital of Germany?"
+  "Write me a poem about summer"
+  "How do I cook pasta?"
+
+define bot refuse off_topic
+  "I am sorry, but as VetMind AI, I am strictly configured to assist with veterinary clinical cases and animal health guidelines. I cannot assist with non-veterinary topics."
+
+define flow off_topic_flow
+  user express off_topic
+  bot refuse off_topic
+  stop
+
+define user ask human medical advice
+  "I have a sore throat"
+  "what antibiotic should I take for my fever"
+  "I am feeling sick"
+  "can I take this medication"
+  "recommend medicine for me"
+
+define bot refuse human medical
+  "I am VetMind AI, a decision support assistant strictly configured for veterinary medicine. I cannot assist with non-veterinary or human medical queries. Please consult a human healthcare professional."
+
+define flow human_medical_flow
+  user ask human medical advice
+  bot refuse human medical
+  stop
+
+
+# --- ALLOWED VETERINARY CLINICAL INTENTS ---
+
+define user ask veterinary advice
+  "What are the potential side effects of Oliver's doxycycline course?"
+  "What are the side effects of medication for a bird?"
+  "What dietary adjustments are recommended for Luna's FLUTD?"
+  "What is the dosage for canine amoxicillin?"
+  "How to manage feline lower urinary tract disease"
+  "What are the diagnostic evaluations for renal failure in cats?"
+
+define flow veterinary_advice_flow
+  user ask veterinary advice
+  # Allow standard generation flow to proceed downstream
