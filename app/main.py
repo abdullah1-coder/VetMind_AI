@@ -95,7 +95,7 @@ class AppointmentCreate(BaseModel):
 # 1. AUTHENTICATION ENDPOINTS
 # ============================================================
 
-@app.post("/api/auth/login")
+@app.post("/auth/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     """Authenticates or registers users (Doctor vs. Owner)."""
     user = db.query(User).filter(User.email == req.email).first()
