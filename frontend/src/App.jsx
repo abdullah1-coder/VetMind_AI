@@ -10,7 +10,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = 'https://vetmindai-production.up.railway.app';
 
 // Species and Breed mapping options
 const SPECIES_BREEDS = {
