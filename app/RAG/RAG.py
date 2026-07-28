@@ -12,6 +12,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 import nest_asyncio
 import logging
+from pathlib import Path
 
 # Resolve project runtime search directory pathways
 current_dir = os.path.abspath(os.getcwd())
@@ -41,7 +42,8 @@ logging.basicConfig(
 RAW_DATA_DIR = r"C:\VetMind AI\data"
 SQLITE_DB_PATH = r"C:\VetMind AI\data\vetmind_records.db"
 
-VECTOR_DB_DIR = getattr(settings, "VECTOR_DB_DIR", r"C:\VetMind AI\app\data\vector_store")
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+VECTOR_DB_DIR = os.getenv("VECTOR_DB_DIR", str(BASE_DIR / "app" / "data" / "vector_store"))
 
 os.makedirs(RAW_DATA_DIR, exist_ok=True)
 os.makedirs(VECTOR_DB_DIR, exist_ok=True)
@@ -109,15 +111,14 @@ def configure_text_splitter() -> RecursiveCharacterTextSplitter:
 
 # %% Engine Core Hybrid Retriever
 # %% Engine Core Hybrid Retriever
-os.environ["HF_HUB_OFFLINE"] = "1"
-os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_OFFLINE"] = "0"  # Allow initial download on Railway if needed
 
 device_target = "cuda" if torch.cuda.is_available() else "cpu"
 
 logger.info("Initializing persistent HuggingFace embedding engine...")
 GLOBAL_EMBEDDINGS = HuggingFaceEmbeddings(
     model_name="all-MiniLM-L6-v2",
-    model_kwargs={"device": device_target, "local_files_only": False}
+    model_kwargs={"device": device_target}
 )
 
 logger.info(f"Connecting to persistent Chroma Vector Store at: {VECTOR_DB_DIR}")
@@ -125,6 +126,65 @@ GLOBAL_VECTOR_DB = Chroma(
     persist_directory=VECTOR_DB_DIR,
     embedding_function=GLOBAL_EMBEDDINGS
 )
+
+def ensure_vector_store_populated():
+    """Checks if vector store is populated; auto-ingests reference data if empty."""
+    try:
+        # Check if vector DB contains any collections or documents
+        existing_count = GLOBAL_VECTOR_DB._collection.count()
+        if existing_count > 0:
+            logger.info(f"Vector database verified with {existing_count} existing chunks.")
+            return
+        
+        logger.info("Empty vector store detected. Initiating automated document ingestion...")
+        
+        # Check for raw PDF documents in data directories
+        pdf_sources = []
+        for search_path in [RAW_DATA_DIR, str(BASE_DIR / "data"), str(BASE_DIR / "app" / "RAG" / "data")]:
+            if os.path.exists(search_path):
+                for f in os.listdir(search_path):
+                    if f.lower().endswith(".pdf"):
+                        pdf_sources.append(os.path.join(search_path, f))
+
+        if not pdf_sources:
+            logger.warning("No PDF reference files found to auto-ingest.")
+            return
+
+        splitter = configure_text_splitter()
+        documents_to_add = []
+
+        for pdf_path in pdf_sources:
+            logger.info(f"Ingesting reference document: {os.path.basename(pdf_path)}")
+            try:
+                for page_num, total_pages, page_text in extract_pdf_pages(pdf_path):
+                    if not page_text.strip():
+                        continue
+                    
+                    chunks = splitter.split_text(page_text)
+                    for chunk in chunks:
+                        documents_to_add.append({
+                            "text": chunk,
+                            "metadata": {
+                                "source_document": os.path.basename(pdf_path),
+                                "page": page_num
+                            }
+                        })
+            except Exception as e:
+                logger.error(f"Error reading {pdf_path}: {e}")
+
+        if documents_to_add:
+            texts = [d["text"] for d in documents_to_add]
+            metadatas = [d["metadata"] for d in documents_to_add]
+            
+            # Batch add documents to Chroma
+            GLOBAL_VECTOR_DB.add_texts(texts=texts, metadatas=metadatas)
+            logger.info(f"Successfully ingested {len(texts)} chunks into ChromaDB.")
+
+    except Exception as e:
+        logger.error(f"Vector store auto-population check failed: {e}")
+
+# Run check on module load
+ensure_vector_store_populated()
 
 
 def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
@@ -138,7 +198,6 @@ def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
 
     logger.info(f"Executing hybrid retriever query: '{search_query[:100]}...'")
 
-    # 1. Similarity Search with a reasonable candidate pool (k=10 instead of k=20 for CPU speed)
     try:
         candidates = GLOBAL_VECTOR_DB.similarity_search(search_query, k=10)
     except Exception as e:
@@ -149,7 +208,6 @@ def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
         logger.warning("No candidate chunks retrieved from ChromaDB.")
         return []
 
-    # 2. Dynamic BM25 index on returned vector candidates
     try:
         bm25_retriever = BM25Retriever.from_documents(candidates)
         bm25_retriever.k = min(k, len(candidates))
@@ -165,7 +223,6 @@ def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
     except Exception as e:
         logger.error(f"Error executing ensemble retrieval: {e}")
         return candidates[:k]
-
 # %% Standalone Script Execution Verification Block
 if __name__ == "__main__":
     test_query = "What is the recommended feline parvovirus vaccination schedule?"

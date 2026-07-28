@@ -1,24 +1,94 @@
-# Logs
-logs
+# ==========================================
+# 1. Environment Secrets & API Keys (CRITICAL)
+# ==========================================
+.env
+.env.*
+*.env
+!.env.example
+
+# ==========================================
+# 2. Heavy Data, Raw PDFs & Medical Manuals
+# ==========================================
+*.pdf
+data/
+app/RAG/data/
+
+# ==========================================
+# 3. SQLite Database Stores & User Uploads
+# ==========================================
+*.sqlite3
+*.db
+*.bin
+vetmind_records.db
+data/chroma_db/*
+app/database/data/uploads/*
+static/reports/*
+logs/*
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# ==========================================
+# 4. Vector Database Allowance (CRITICAL FOR RAILWAY RAG)
+# ==========================================
+# Un-ignore app/data/vector_store and all underlying database/index files
+!app/data/vector_store/
+!app/data/vector_store/**
+!app/data/vector_store/*.sqlite3
+!app/data/vector_store/*.bin
+!app/data/vector_store/*.parquet
+!app/data/vector_store/**/*.sqlite3
+!app/data/vector_store/**/*.bin
+!app/data/vector_store/**/*.parquet
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# ==========================================
+# 5. Python Caches & Virtual Environments
+# ==========================================
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ==========================================
+# 6. Node.js & Frontend Build Outputs
+# ==========================================
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.cache/
+*.tsbuildinfo
+
+# ==========================================
+# 7. IDE, OS & System Files
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+.DS_Store?
+ehthumbs.db
+Thumbs.db
