@@ -33,6 +33,8 @@ class AppointmentStatus(str, enum.Enum):
 # PATIENT EHR & CLINICAL MODELS
 # ============================================================
 
+# In app/database/models.py
+
 class Patient(Base):
     __tablename__ = "patients"
 
@@ -42,13 +44,19 @@ class Patient(Base):
     breed = Column(String(100), nullable=True)               # e.g. "Domestic Shorthair"
     age = Column(String(20), nullable=True)                  # e.g. "4 years"
     owner_name = Column(String(100), nullable=True)
+    
+    # NEW FOREIGN KEYS FOR USER DATA ISOLATION
+    doctor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
+    doctor = relationship("User", foreign_keys=[doctor_id])
+    owner = relationship("User", foreign_keys=[owner_id])
     records = relationship("ClinicalRecord", back_populates="patient", cascade="all, delete-orphan")
     reports = relationship("GeneratedReport", back_populates="patient", cascade="all, delete-orphan")
     chats = relationship("ChatMessage", back_populates="patient", cascade="all, delete-orphan")
-
 
 class ClinicalRecord(Base):
     __tablename__ = "clinical_records"

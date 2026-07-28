@@ -14,7 +14,7 @@ const API_BASE = 'https://vetmindai-production.up.railway.app';
 
 // Species and Breed mapping options
 const SPECIES_BREEDS = {
-  Feline: [
+  'Feline(cat)': [
     'Domestic Shorthair',
     'Domestic Longhair',
     'Persian',
@@ -24,7 +24,7 @@ const SPECIES_BREEDS = {
     'British Shorthair',
     'Other / Mixed Feline'
   ],
-  Canine: [
+  'Canine(Dog)': [
     'Labrador Retriever',
     'German Shepherd',
     'Golden Retriever',
@@ -34,9 +34,9 @@ const SPECIES_BREEDS = {
     'Rottweiler',
     'Other / Mixed Canine'
   ],
-  Avian: ['Parrot', 'Cockatiel', 'Budgerigar', 'Canary', 'Lovebird', 'Other Avian'],
-  Equine: ['Arabian', 'Thoroughbred', 'Quarter Horse', 'Appaloosa', 'Other Equine'],
-  Exotic: ['Rabbit', 'Guinea Pig', 'Hamster', 'Ferret', 'Reptile', 'Other Exotic']
+  'Avian(Bird)': ['Parrot', 'Cockatiel', 'Budgerigar', 'Canary', 'Lovebird', 'Other Avian'],
+  'Equine(Horse)': ['Arabian', 'Thoroughbred', 'Quarter Horse', 'Appaloosa', 'Other Equine'],
+  'Exotic(Exotic Pet)': ['Rabbit', 'Guinea Pig', 'Hamster', 'Ferret', 'Reptile', 'Other Exotic']
 };
 
 export default function App() {
@@ -44,6 +44,8 @@ export default function App() {
   // AUTH & ROLE STATE
   // -----------------------------------------------------------------
   const [currentUser, setCurrentUser] = useState(null); // { id, email, role, full_name }
+  const [isSigningUp, setIsSigningUp] = useState(false);
+  const [fullName, setFullName] = useState('');
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [selectedRole, setSelectedRole] = useState('owner'); // 'doctor' | 'owner'
@@ -69,7 +71,7 @@ export default function App() {
   // New Patient Form
   const [newPatient, setNewPatient] = useState({ 
     name: '', 
-    species: 'Feline', 
+    species: 'Feline(cat)', 
     breed: 'Domestic Shorthair', 
     age: '', 
     owner_name: '' 
@@ -88,6 +90,18 @@ export default function App() {
 
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Set up request interceptor for user data isolation via X-User-ID header
+  useEffect(() => {
+    const interceptor = axios.interceptors.request.use((config) => {
+      if (currentUser?.id) {
+        config.headers['X-User-ID'] = currentUser.id;
+      }
+      return config;
+    });
+
+    return () => axios.interceptors.request.eject(interceptor);
+  }, [currentUser]);
 
   useEffect(() => {
     if (currentUser) {
@@ -167,20 +181,21 @@ export default function App() {
   };
 
   // -----------------------------------------------------------------
-  // AUTH HANDLERS (Email / Password Only)
+  // AUTH HANDLERS (Supports Sign In & Create Account)
   // -----------------------------------------------------------------
-  const handleLogin = async (e) => {
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${API_BASE}/auth/login`, {
-        email: loginEmail,
-        password: loginPassword,
-        role: selectedRole
-      });
+      const endpoint = isSigningUp ? '/auth/register' : '/auth/login';
+      const payload = isSigningUp 
+        ? { full_name: fullName, email: loginEmail, password: loginPassword, role: selectedRole }
+        : { email: loginEmail, password: loginPassword, role: selectedRole };
+
+      const res = await axios.post(`${API_BASE}${endpoint}`, payload);
       setCurrentUser(res.data.user);
       setActiveTab('chat');
     } catch (err) {
-      alert('Login failed: ' + (err.response?.data?.detail || err.message));
+      alert((isSigningUp ? 'Registration' : 'Login') + ' failed: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -188,6 +203,7 @@ export default function App() {
     setCurrentUser(null);
     setSelectedPatient(null);
     setMessages([]);
+    setLoginPassword('');
   };
 
   // -----------------------------------------------------------------
@@ -314,7 +330,7 @@ export default function App() {
   );
 
   // =================================================================
-  // RENDER LOGIN PAGE (If not authenticated)
+  // RENDER LOGIN / REGISTER PAGE
   // =================================================================
   if (!currentUser) {
     return (
@@ -324,8 +340,12 @@ export default function App() {
             <div className="w-12 h-12 rounded-2xl text-white mx-auto flex items-center justify-center font-bold shadow-md" style={{ backgroundColor: '#3B6255' }}>
               <Cat className="w-6 h-6" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900">Welcome to VetMind AI</h2>
-            <p className="text-xs text-gray-500">Sign in with your email and password</p>
+            <h2 className="text-xl font-bold text-gray-900">
+              {isSigningUp ? 'Create VetMind Account' : 'Welcome to VetMind AI'}
+            </h2>
+            <p className="text-xs text-gray-500">
+              {isSigningUp ? 'Fill details to create your account' : 'Sign in with your email and password'}
+            </p>
           </div>
 
           {/* ROLE SELECTOR TOGGLE */}
@@ -350,8 +370,21 @@ export default function App() {
             </button>
           </div>
 
-          {/* EMAIL / PASSWORD FORM */}
-          <form onSubmit={handleLogin} className="space-y-4">
+          {/* AUTH FORM */}
+          <form onSubmit={handleAuthSubmit} className="space-y-4">
+            {isSigningUp && (
+              <div>
+                <label className="text-xs font-semibold text-gray-700">Full Name</label>
+                <input 
+                  type="text" required
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="e.g. Dr. John Smith"
+                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#3B6255] text-gray-800"
+                />
+              </div>
+            )}
+
             <div>
               <label className="text-xs font-semibold text-gray-700">Email Address</label>
               <input 
@@ -379,8 +412,19 @@ export default function App() {
               className="w-full py-2.5 text-white rounded-xl text-xs font-bold transition-all hover:opacity-90 shadow-md cursor-pointer"
               style={{ backgroundColor: '#3B6255' }}
             >
-              Sign In as {selectedRole === 'doctor' ? 'Doctor' : 'Pet Owner'}
+              {isSigningUp ? 'Create Account' : `Sign In as ${selectedRole === 'doctor' ? 'Doctor' : 'Pet Owner'}`}
             </button>
+
+            {/* TOGGLE LINK */}
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => setIsSigningUp(!isSigningUp)}
+                className="text-xs font-semibold text-[#3B6255] hover:underline cursor-pointer"
+              >
+                {isSigningUp ? 'Already have an account? Sign In' : "Don't have an account? Create Account"}
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -573,7 +617,7 @@ export default function App() {
                           </div>
                           
                           <a 
-                            href={`http://127.0.0.1:8000${m.report_pdf_url}`}
+                            href={`${API_BASE}${m.report_pdf_url}`}
                             target="_blank"
                             rel="noreferrer"
                             download
