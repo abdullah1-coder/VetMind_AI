@@ -20,16 +20,17 @@ class ReportGenerationAgent:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _sanitize_utf8_text(self, text: str) -> str:
-        """Removes characters that trigger Helvetica missing-glyph black boxes or invalid ReportLab HTML tags."""
-        # 1. Strip raw Base64 blocks, code wrappers, and trailing data URLs
+        """Strips unicode characters that trigger missing-glyph black boxes in Helvetica."""
+        # 1. Strip raw code blocks, Base64 strings, and download link noise
         text = re.sub(r'```(?:text|bash)?[\s\S]*?```', '', text)
         text = re.sub(r'\[.*?\]\(data:application/pdf;base64,[\s\S]*?\)', '', text)
         text = re.sub(r'JVBERi0x[\s\S]*', '', text)
+        text = re.sub(r'A PDF version of this report[\s\S]*', '', text, flags=re.IGNORECASE)
 
-        # 2. Convert <br> tags to valid self-closing <br/> XML tags
+        # 2. Fix ReportLab paraparser <br> syntax errors
         text = re.sub(r'<br\s*/?>', '<br/>', text, flags=re.IGNORECASE)
 
-        # 3. Replace non-standard characters causing black glyph boxes in Helvetica
+        # 3. Comprehensive dictionary replacement for bad Unicode characters
         replacements = {
             "–": "-",
             "—": "-",
@@ -45,17 +46,28 @@ class ReportGenerationAgent:
             "\u25a0": "-",
             "■": "-",
             "•": "-",
-            "|": "",  # Remove stray markdown pipes outside table parser
+            "≥": ">=",
+            "≤": "<=",
+            "±": "+/-",
+            "~": "-",
+            "α": "alpha",
+            "β": "beta",
+            "γ": "gamma",
+            "μ": "u",
+            "|": "",  # Strip stray pipes outside tables
         }
         for bad_char, clean_char in replacements.items():
             text = text.replace(bad_char, clean_char)
+
+        # 4. Remove any remaining non-ASCII characters to guarantee clean Helvetica rendering
+        text = re.sub(r'[^\x00-\x7F]+', '', text)
             
         return text.strip()
 
     def convert_to_pdf(self, report_text: str, filename: str = "case_summary.pdf") -> str:
         pdf_path = os.path.join(self.output_dir, filename)
         
-        # Initialize Document Template
+        # Initialize Document Template with precise 0.5-inch margins
         doc = SimpleDocTemplate(
             pdf_path, 
             pagesize=letter, 
@@ -69,10 +81,14 @@ class ReportGenerationAgent:
         
         styles = getSampleStyleSheet()
         
+        # Brand Colors
         PRIMARY_GREEN = colors.HexColor("#059669")
         HEADER_GREEN = colors.HexColor("#10B981")
         TEXT_DARK = colors.HexColor("#1F2937")
+        BORDER_GRAY = colors.HexColor("#D1D5DB")
+        ALT_BG = colors.HexColor("#F9FAFB")
         
+        # Paragraph Styles
         title_style = ParagraphStyle(
             'PDFTitle', parent=styles['Heading1'], fontSize=15, leading=19, 
             textColor=PRIMARY_GREEN, spaceAfter=8, fontName='Helvetica-Bold'
@@ -99,11 +115,10 @@ class ReportGenerationAgent:
 
         story = []
         
-        # Header Banner
-        story.append(Paragraph("VetMind AI — Clinical Case Summary Report", title_style))
+        # Title Banner
+        story.append(Paragraph("VetMind AI - Clinical Case Summary Report", title_style))
         story.append(Spacer(1, 4))
 
-        # First pass sanitization
         cleaned_text = self._sanitize_utf8_text(report_text)
         lines = cleaned_text.split('\n')
         
@@ -115,7 +130,6 @@ class ReportGenerationAgent:
             
             table_data = []
             for row_idx, row_str in enumerate(buffer):
-                # Clean pipe boundaries for table columns
                 raw_cells = row_str.strip().strip('|').split('|')
                 cells = [c.strip() for c in raw_cells]
                 if not cells or all(c == "" for c in cells):
@@ -123,7 +137,7 @@ class ReportGenerationAgent:
                 
                 formatted_row = []
                 for cell_text in cells:
-                    # Clean markdown formatting inside cells
+                    # Clean markdown tags inside table cells
                     cell_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', cell_text)
                     cell_text = re.sub(r'<br\s*/?>', '<br/>', cell_text, flags=re.IGNORECASE)
                     cell_text = cell_text.replace("■", "-").replace("•", "-")
@@ -137,15 +151,15 @@ class ReportGenerationAgent:
                 num_cols = max(len(row) for row in table_data)
                 total_printable_width = 540
                 
-                # Dynamic column width assignment
+                # Column sizing based on column count
                 if num_cols == 2:
-                    col_widths = [160, 380]
+                    col_widths = [140, 400]
                 elif num_cols == 3:
-                    col_widths = [130, 210, 200]
+                    col_widths = [110, 210, 220]
                 elif num_cols == 4:
-                    col_widths = [110, 130, 150, 150]
+                    col_widths = [110, 150, 140, 140]
                 elif num_cols == 5:
-                    col_widths = [90, 110, 110, 110, 120]
+                    col_widths = [100, 110, 110, 100, 120]
                 else:
                     col_widths = [total_printable_width / max(num_cols, 1)] * num_cols
                 
@@ -157,8 +171,10 @@ class ReportGenerationAgent:
                     ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
                     ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#F9FAFB")]),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 5),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+                    ('GRID', (0, 0), (-1, -1), 0.5, BORDER_GRAY),
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, ALT_BG]),
                 ]))
                 story_list.append(Spacer(1, 4))
                 story_list.append(t)
@@ -181,11 +197,11 @@ class ReportGenerationAgent:
             if not clean_line or clean_line == "---":
                 continue
 
-            # Strip out any lingering download instructions or Base64 links
+            # Strip out download link noise
             if "Downloadable PDF" in clean_line or "data:application/pdf" in clean_line or "base64" in clean_line:
                 continue
 
-            # Convert bold tags
+            # Bold tags
             clean_line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', clean_line)
 
             # Headings
@@ -196,7 +212,7 @@ class ReportGenerationAgent:
             elif clean_line.startswith("-") or clean_line.startswith("*") or re.match(r'^\d+\.', clean_line):
                 bullet_text = re.sub(r'^[-*\d.]+\s*', '', clean_line).strip()
                 story.append(Paragraph(f"- {bullet_text}", bullet_style))
-            # Standard body text
+            # Body text
             else:
                 story.append(Paragraph(clean_line, body_style))
 
@@ -206,3 +222,4 @@ class ReportGenerationAgent:
         doc.build(story)
         logger.info(f"PDF compiled successfully at: {pdf_path}")
         return pdf_path
+
