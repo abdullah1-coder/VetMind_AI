@@ -20,23 +20,26 @@ class ReportGenerationAgent:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _sanitize_utf8_text(self, text: str) -> str:
-        """Strips unicode characters and preserves spacing for clean Helvetica rendering."""
+        """Strips unicode characters, handles math symbols, and preserves spaces/hyphens for clean ReportLab rendering."""
         # 1. Strip raw code blocks, Base64 strings, and download link noise
         text = re.sub(r'```(?:text|bash)?[\s\S]*?```', '', text)
         text = re.sub(r'\[.*?\]\(data:application/pdf;base64,[\s\S]*?\)', '', text)
         text = re.sub(r'JVBERi0x[\s\S]*', '', text)
-        text = re.sub(r'To obtain a PDF[\s\S]*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'To generate the PDF[\s\S]*', '', text, flags=re.IGNORECASE)
         text = re.sub(r'The above sections constitute[\s\S]*', '', text, flags=re.IGNORECASE)
 
-        # 2. Convert <br> tags to valid self-closing <br/> XML tags
+        # 2. Fix ReportLab paraparser <br> syntax errors
         text = re.sub(r'<br\s*/?>', '<br/>', text, flags=re.IGNORECASE)
 
-        # 3. Clean up LaTeX math symbols (e.g. $8/10 \rightarrow 1/10$ or $>=2$)
-        text = re.sub(r'\$(.*?)\$', r'\1', text)
+        # 3. Handle LaTeX math strings: remove $ delimiters without eating numbers
+        # e.g., $1.4 mg/dL$ -> 1.4 mg/dL, $BCS 5/9$ -> BCS 5/9
+        text = re.sub(r'\$([^\$]+)\$', r'\1', text)
 
-        # 4. Replace non-breaking spaces and special Unicode characters WITH SPACES
+        # 4. Convert non-breaking spaces and special micro/unit symbols
         text = text.replace("\u00a0", " ").replace("\xa0", " ")
+        text = text.replace("µg", "ug").replace("μg", "ug")
 
+        # 5. Clean common punctuation replacements
         replacements = {
             "–": " - ",
             "—": " - ",
@@ -60,10 +63,10 @@ class ReportGenerationAgent:
         for bad_char, clean_char in replacements.items():
             text = text.replace(bad_char, clean_char)
 
-        # 5. Remove remaining unsupported non-ASCII characters without destroying whitespace
+        # 6. Remove remaining unsupported non-ASCII characters without destroying whitespace or digits
         text = re.sub(r'[^\x20-\x7E\n\r\t]', '', text)
         
-        # 6. Normalize multiple spaces into a single space
+        # 7. Normalize multiple spaces into a single space
         text = re.sub(r'[ \t]+', ' ', text)
             
         return text.strip()
@@ -150,15 +153,15 @@ class ReportGenerationAgent:
                 num_cols = max(len(row) for row in table_data)
                 total_printable_width = 540
                 
-                # Proportional column sizing for 2, 3, 4, or 5 column tables
+                # Proportional column width allocation
                 if num_cols == 2:
                     col_widths = [140, 400]
                 elif num_cols == 3:
-                    col_widths = [100, 220, 220]
+                    col_widths = [95, 220, 225]
                 elif num_cols == 4:
-                    col_widths = [100, 140, 150, 150]
+                    col_widths = [95, 135, 155, 155]
                 elif num_cols == 5:
-                    col_widths = [100, 110, 110, 100, 120]
+                    col_widths = [95, 105, 110, 105, 125]
                 else:
                     col_widths = [total_printable_width / max(num_cols, 1)] * num_cols
                 
@@ -195,7 +198,7 @@ class ReportGenerationAgent:
             if not clean_line or clean_line == "---":
                 continue
 
-            if "Downloadable PDF" in clean_line or "data:application/pdf" in clean_line or "base64" in clean_line:
+            if "Downloadable PDF" in clean_line or "data:application/pdf" in clean_line or "base64" in clean_line or "To generate the PDF" in clean_line:
                 continue
 
             clean_line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', clean_line)
