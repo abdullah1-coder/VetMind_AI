@@ -125,7 +125,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 # 2. PATIENT EHR ENDPOINTS (CRUD)
 # ============================================================
 
-@app.post("/api/patients", response_model=PatientOut, status_code=status.HTTP_201_CREATED)
+@app.post("/patients", response_model=PatientOut, status_code=status.HTTP_201_CREATED)
 def create_patient(patient_in: PatientCreate, db: Session = Depends(get_db)):
     """Creates a new patient profile."""
     db_patient = Patient(**patient_in.dict())
@@ -135,13 +135,13 @@ def create_patient(patient_in: PatientCreate, db: Session = Depends(get_db)):
     return db_patient
 
 
-@app.get("/api/patients", response_model=List[PatientOut])
+@app.get("/patients", response_model=List[PatientOut])
 def list_patients(db: Session = Depends(get_db)):
     """Returns all patient profiles stored in SQLite."""
     return db.query(Patient).order_by(Patient.created_at.desc()).all()
 
 
-@app.get("/api/patients/{patient_id}", response_model=PatientOut)
+@app.get("/patients/{patient_id}", response_model=PatientOut)
 def get_patient(patient_id: int, db: Session = Depends(get_db)):
     """Fetches full details and clinical record history for a specific patient."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
@@ -150,7 +150,7 @@ def get_patient(patient_id: int, db: Session = Depends(get_db)):
     return patient
 
 
-@app.put("/api/patients/{patient_id}", response_model=PatientOut)
+@app.put("/patients/{patient_id}", response_model=PatientOut)
 def update_patient(patient_id: int, patient_in: PatientCreate, db: Session = Depends(get_db)):
     """Updates an existing patient record."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
@@ -168,7 +168,7 @@ def update_patient(patient_id: int, patient_in: PatientCreate, db: Session = Dep
     return patient
 
 
-@app.delete("/api/patients/{patient_id}", status_code=status.HTTP_200_OK)
+@app.delete("/patients/{patient_id}", status_code=status.HTTP_200_OK)
 def delete_patient(patient_id: int, db: Session = Depends(get_db)):
     """Deletes a patient record and all associated clinical notes/chat messages."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
@@ -190,7 +190,7 @@ def delete_patient(patient_id: int, db: Session = Depends(get_db)):
 # 3. APPOINTMENT BOOKING ENDPOINTS
 # ============================================================
 
-@app.post("/api/appointments", status_code=status.HTTP_201_CREATED)
+@app.post("/appoinments", status_code=status.HTTP_201_CREATED)
 def create_appointment(req: AppointmentCreate, db: Session = Depends(get_db)):
     """Saves a new appointment request from a pet owner."""
     apt = Appointment(**req.dict())
@@ -200,13 +200,13 @@ def create_appointment(req: AppointmentCreate, db: Session = Depends(get_db)):
     return apt
 
 
-@app.get("/api/appointments")
+@app.get("/appoinments")
 def get_appointments(db: Session = Depends(get_db)):
     """Retrieves all scheduled appointments."""
     return db.query(Appointment).order_by(Appointment.created_at.desc()).all()
 
 
-@app.put("/api/appointments/{apt_id}/status")
+@app.put("/appoinments/{apt_id}/status")
 def update_appointment_status(apt_id: int, status: str, db: Session = Depends(get_db)):
     """Updates appointment status ('confirmed', 'cancelled', 'pending')."""
     apt = db.query(Appointment).filter(Appointment.id == apt_id).first()
@@ -223,7 +223,7 @@ def update_appointment_status(apt_id: int, status: str, db: Session = Depends(ge
 # 4. OCR FILE INGESTION ROUTE
 # ============================================================
 
-@app.post("/api/ocr/upload", response_model=ClinicalRecordOut)
+@app.post("/ocr/upload", response_model=ClinicalRecordOut)
 async def upload_and_process_ocr(
     patient_id: int = Form(...),
     title: Optional[str] = Form(None),
@@ -268,7 +268,7 @@ async def upload_and_process_ocr(
 # 5. AGENTIC CHAT & CASE REPLAY WORKFLOW
 # ============================================================
 
-@app.post("/api/chat", response_model=ChatQueryResponse)
+@app.post("/chat", response_model=ChatQueryResponse)
 def execute_chat_query(req: ChatQueryRequest, db: Session = Depends(get_db)):
     """Orchestrates multi-turn clinical chat across agent nodes."""
     session_id = getattr(req, "session_id", None) or str(uuid.uuid4())
@@ -390,7 +390,7 @@ def execute_chat_query(req: ChatQueryRequest, db: Session = Depends(get_db)):
 # 6. REPORT DOWNLOAD ROUTE
 # ============================================================
 
-@app.get("/api/reports/download/{filename}")
+@app.get("/reports/download/{filename}")
 def download_generated_report(filename: str):
     """Serves compiled PDF medical reports directly to the UI download button."""
     possible_paths = [
