@@ -19,30 +19,21 @@ class ReportGenerationAgent:
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
 
-    def _sanitize_utf8_text(self, text: str) -> str:
-        """Strips unicode characters, handles math symbols, and preserves spaces/hyphens for clean ReportLab rendering."""
-        # 1. Strip raw code blocks, Base64 strings, and download link noise
-        text = re.sub(r'```(?:text|bash)?[\s\S]*?```', '', text)
-        text = re.sub(r'\[.*?\]\(data:application/pdf;base64,[\s\S]*?\)', '', text)
-        text = re.sub(r'JVBERi0x[\s\S]*', '', text)
-        text = re.sub(r'To generate the PDF[\s\S]*', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'The above sections constitute[\s\S]*', '', text, flags=re.IGNORECASE)
-
-        # 2. Fix ReportLab paraparser <br> syntax errors
-        text = re.sub(r'<br\s*/?>', '<br/>', text, flags=re.IGNORECASE)
-
-        # 3. Handle LaTeX math strings: remove $ delimiters without eating numbers
-        # e.g., $1.4 mg/dL$ -> 1.4 mg/dL, $BCS 5/9$ -> BCS 5/9
-        text = re.sub(r'\$([^\$]+)\$', r'\1', text)
-
-        # 4. Convert non-breaking spaces and special micro/unit symbols
+    def _clean_latex_and_symbols(self, text: str) -> str:
+        """Directly strips all LaTeX dollar signs ($), tildes (~), and non-printable characters."""
+        if not text:
+            return ""
+        
+        # 1. Remove all LaTeX math delimiters and tildes
+        text = text.replace("$", "").replace("~", " ")
+        
+        # 2. Normalize non-breaking spaces and unicode dashes
         text = text.replace("\u00a0", " ").replace("\xa0", " ")
-        text = text.replace("µg", "ug").replace("μg", "ug")
-
-        # 5. Clean common punctuation replacements
+        text = text.replace("µg", " ug").replace("μg", " ug")
+        text = text.replace("‑", "-").replace("–", " - ").replace("—", " - ")
+        
+        # 3. Clean common non-ASCII punctuation
         replacements = {
-            "–": " - ",
-            "—": " - ",
             "“": '"',
             "”": '"',
             "‘": "'",
@@ -57,17 +48,31 @@ class ReportGenerationAgent:
             "≥": ">=",
             "≤": "<=",
             "±": "+/-",
-            "~": "-",
-            "|": "",  # Strip stray pipes outside tables
         }
         for bad_char, clean_char in replacements.items():
             text = text.replace(bad_char, clean_char)
 
-        # 6. Remove remaining unsupported non-ASCII characters without destroying whitespace or digits
+        # 4. Remove any remaining unsupported characters
         text = re.sub(r'[^\x20-\x7E\n\r\t]', '', text)
-        
-        # 7. Normalize multiple spaces into a single space
         text = re.sub(r'[ \t]+', ' ', text)
+        
+        return text.strip()
+
+    def _sanitize_utf8_text(self, text: str) -> str:
+        """Strips raw code blocks, download links, and unsupported characters."""
+        # 1. Strip raw code blocks, Base64 strings, and download link noise
+        text = re.sub(r'```(?:text|bash)?[\s\S]*?```', '', text)
+        text = re.sub(r'\[.*?\]\(data:application/pdf;base64,[\s\S]*?\)', '', text)
+        text = re.sub(r'JVBERi0x[\s\S]*', '', text)
+        text = re.sub(r'To generate the PDF[\s\S]*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'The above sections constitute[\s\S]*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'Downloadable PDF[\s\S]*', '', text, flags=re.IGNORECASE)
+
+        # 2. Fix ReportLab paraparser <br> syntax errors
+        text = re.sub(r'<br\s*/?>', '<br/>', text, flags=re.IGNORECASE)
+
+        # 3. Strip LaTeX notation and unicode symbols
+        text = self._clean_latex_and_symbols(text)
             
         return text.strip()
 
@@ -140,9 +145,10 @@ class ReportGenerationAgent:
                 
                 formatted_row = []
                 for cell_text in cells:
+                    # Sanitize cell content explicitly
+                    cell_text = self._clean_latex_and_symbols(cell_text)
                     cell_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', cell_text)
                     cell_text = re.sub(r'<br\s*/?>', '<br/>', cell_text, flags=re.IGNORECASE)
-                    cell_text = cell_text.replace("■", "-").replace("•", "-")
                     
                     style = table_header_style if row_idx == 0 else table_cell_style
                     formatted_row.append(Paragraph(cell_text, style))
@@ -153,13 +159,12 @@ class ReportGenerationAgent:
                 num_cols = max(len(row) for row in table_data)
                 total_printable_width = 540
                 
-                # Proportional column width allocation
                 if num_cols == 2:
                     col_widths = [140, 400]
                 elif num_cols == 3:
-                    col_widths = [95, 220, 225]
+                    col_widths = [110, 215, 215]
                 elif num_cols == 4:
-                    col_widths = [95, 135, 155, 155]
+                    col_widths = [100, 140, 150, 150]
                 elif num_cols == 5:
                     col_widths = [95, 105, 110, 105, 125]
                 else:
@@ -198,9 +203,10 @@ class ReportGenerationAgent:
             if not clean_line or clean_line == "---":
                 continue
 
-            if "Downloadable PDF" in clean_line or "data:application/pdf" in clean_line or "base64" in clean_line or "To generate the PDF" in clean_line:
+            if "Downloadable PDF" in clean_line or "data:application/pdf" in clean_line or "base64" in clean_line or "To generate the PDF" in clean_line or "Copy the entire content" in clean_line:
                 continue
 
+            clean_line = self._clean_latex_and_symbols(clean_line)
             clean_line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', clean_line)
 
             if clean_line.startswith("## ") or clean_line.startswith("### ") or (clean_line.endswith(":") and len(clean_line) < 45 and not clean_line.startswith("-")):
