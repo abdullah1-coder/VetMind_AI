@@ -13,7 +13,7 @@ from langchain_classic.retrievers import EnsembleRetriever
 import nest_asyncio
 import logging
 from pathlib import Path
-
+from langchain_community.embeddings import FastEmbedEmbeddings
 # Resolve project runtime search directory pathways
 current_dir = os.path.abspath(os.getcwd())
 root_dir = current_dir
@@ -115,11 +115,8 @@ os.environ["HF_HUB_OFFLINE"] = "0"  # Allow initial download on Railway if neede
 
 device_target = "cuda" if torch.cuda.is_available() else "cpu"
 
-logger.info("Initializing persistent HuggingFace embedding engine...")
-GLOBAL_EMBEDDINGS = HuggingFaceEmbeddings(
-    model_name="all-MiniLM-L6-v2",
-    model_kwargs={"device": device_target}
-)
+logger.info("Initializing high-speed ONNX FastEmbed engine...")
+GLOBAL_EMBEDDINGS = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 
 logger.info(f"Connecting to persistent Chroma Vector Store at: {VECTOR_DB_DIR}")
 GLOBAL_VECTOR_DB = Chroma(
@@ -188,7 +185,6 @@ ensure_vector_store_populated()
 
 
 def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
-    """Fast, memory-cached hybrid search across vector and BM25 indexes."""
     if search_query is None:
         search_query = kwargs.get("query", "")
 
@@ -196,18 +192,17 @@ def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
     if not search_query:
         return []
 
-    logger.info(f"Executing hybrid retriever query: '{search_query[:100]}...'")
-
+    # 1. Fetch top 5 vector candidates using ONNX fast embeddings
     try:
-        candidates = GLOBAL_VECTOR_DB.similarity_search(search_query, k=10)
+        candidates = GLOBAL_VECTOR_DB.similarity_search(search_query, k=5)
     except Exception as e:
         logger.error(f"ChromaDB lookup error: {e}")
         candidates = []
 
     if not candidates:
-        logger.warning("No candidate chunks retrieved from ChromaDB.")
         return []
 
+    # 2. In-memory BM25 reranking on top 5 candidates
     try:
         bm25_retriever = BM25Retriever.from_documents(candidates)
         bm25_retriever.k = min(k, len(candidates))

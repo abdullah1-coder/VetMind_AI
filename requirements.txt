@@ -21,3 +21,4 @@ langchain-community
 nemoguardrails
 reportlab
 python-multipart
+fastembed 
