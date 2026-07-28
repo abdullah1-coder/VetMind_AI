@@ -57,7 +57,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -190,7 +190,7 @@ def delete_patient(patient_id: int, db: Session = Depends(get_db)):
 # 3. APPOINTMENT BOOKING ENDPOINTS
 # ============================================================
 
-@app.post("/appoinments", status_code=status.HTTP_201_CREATED)
+@app.post("/appointments", status_code=status.HTTP_201_CREATED)
 def create_appointment(req: AppointmentCreate, db: Session = Depends(get_db)):
     """Saves a new appointment request from a pet owner."""
     apt = Appointment(**req.dict())
@@ -200,13 +200,13 @@ def create_appointment(req: AppointmentCreate, db: Session = Depends(get_db)):
     return apt
 
 
-@app.get("/appoinments")
+@app.get("/appointments")
 def get_appointments(db: Session = Depends(get_db)):
     """Retrieves all scheduled appointments."""
     return db.query(Appointment).order_by(Appointment.created_at.desc()).all()
 
 
-@app.put("/appoinments/{apt_id}/status")
+@app.put("/appointments/{apt_id}/status")
 def update_appointment_status(apt_id: int, status: str, db: Session = Depends(get_db)):
     """Updates appointment status ('confirmed', 'cancelled', 'pending')."""
     apt = db.query(Appointment).filter(Appointment.id == apt_id).first()
