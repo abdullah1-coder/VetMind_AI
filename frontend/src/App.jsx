@@ -5,7 +5,7 @@ import axios from 'axios';
 import { 
   Send, Paperclip, FileText, Download, Plus, 
   User, MessageSquare, Users, Search, RefreshCw, Cat, Sparkles, FolderOpen,
-  Edit, Trash2, Calendar, CheckCircle2, XCircle, Clock, LogOut, ChevronDown, Eye, X
+  Edit, Trash2, Calendar, CheckCircle2, XCircle, Clock, LogOut, ChevronDown, Eye, X, Stethoscope, ClipboardList
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -62,10 +62,12 @@ export default function App() {
   const [inputQuery, setInputQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Directory Modal Controls
+  // Directory & Visit Modal Controls
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showVisitModal, setShowVisitModal] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [viewingPatientRecords, setViewingPatientRecords] = useState(null);
+  const [patientVisits, setPatientVisits] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   // New Patient Form
@@ -75,6 +77,18 @@ export default function App() {
     breed: 'Domestic Shorthair', 
     age: '', 
     owner_name: '' 
+  });
+
+  // New Clinical Visit Form
+  const [newVisit, setNewVisit] = useState({
+    primary_complaint: '',
+    clinical_findings: '',
+    diagnosis: '',
+    treatment_plan: '',
+    weight_kg: '',
+    pruritus_score: '',
+    follow_up_date: '',
+    notes: ''
   });
 
   // Booking State
@@ -91,7 +105,7 @@ export default function App() {
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Set up request interceptor for user data isolation via X-User-ID header
+  // Interceptor for multi-tenant X-User-ID header
   useEffect(() => {
     const interceptor = axios.interceptors.request.use((config) => {
       if (currentUser?.id) {
@@ -134,15 +148,34 @@ export default function App() {
     }
   };
 
+  const fetchPatientVisits = async (patientId) => {
+    try {
+      const res = await axios.get(`${API_BASE}/patients/${patientId}/visits`);
+      setPatientVisits(res.data);
+    } catch (err) {
+      console.error('Failed to fetch patient visits:', err);
+    }
+  };
+
   // Switch patient context for doctors
   const handlePatientSelect = (patient) => {
     setSelectedPatient(patient);
     const contextKey = patient ? patient.id : 'general';
     setMessages(patientSessions[contextKey] || []);
+    if (patient) {
+      fetchPatientVisits(patient.id);
+    } else {
+      setPatientVisits([]);
+    }
+  };
+
+  const handleOpenPatientHistory = (patient) => {
+    setViewingPatientRecords(patient);
+    fetchPatientVisits(patient.id);
   };
 
   // -----------------------------------------------------------------
-  // PATIENT CRUD HANDLERS
+  // PATIENT & VISIT CRUD HANDLERS
   // -----------------------------------------------------------------
   const handleCreatePatient = async (e) => {
     e.preventDefault();
@@ -151,7 +184,7 @@ export default function App() {
       setPatients([res.data, ...patients]);
       handlePatientSelect(res.data);
       setShowAddModal(false);
-      setNewPatient({ name: '', species: 'Feline', breed: 'Domestic Shorthair', age: '', owner_name: '' });
+      setNewPatient({ name: '', species: 'Feline(cat)', breed: 'Domestic Shorthair', age: '', owner_name: '' });
     } catch (err) {
       alert('Error creating patient: ' + (err.response?.data?.detail || err.message));
     }
@@ -180,8 +213,45 @@ export default function App() {
     }
   };
 
+  const handleCreateClinicalVisit = async (e) => {
+    e.preventDefault();
+    if (!selectedPatient) {
+      alert('Please select a patient first before logging a consultation session.');
+      return;
+    }
+
+    try {
+      const payload = {
+        ...newVisit,
+        weight_kg: newVisit.weight_kg ? parseFloat(newVisit.weight_kg) : null,
+        pruritus_score: newVisit.pruritus_score ? parseInt(newVisit.pruritus_score) : null,
+        doctor_id: currentUser?.id
+      };
+
+      await axios.post(`${API_BASE}/patients/${selectedPatient.id}/visits`, payload);
+      alert(`Doctor consultation visit logged successfully for ${selectedPatient.name}!`);
+      
+      setShowVisitModal(false);
+      setNewVisit({
+        primary_complaint: '',
+        clinical_findings: '',
+        diagnosis: '',
+        treatment_plan: '',
+        weight_kg: '',
+        pruritus_score: '',
+        follow_up_date: '',
+        notes: ''
+      });
+
+      fetchPatientVisits(selectedPatient.id);
+      fetchPatients();
+    } catch (err) {
+      alert('Error logging visit: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
   // -----------------------------------------------------------------
-  // AUTH HANDLERS (Supports Sign In & Create Account)
+  // AUTH HANDLERS
   // -----------------------------------------------------------------
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -491,8 +561,18 @@ export default function App() {
           </nav>
         </div>
 
-        {/* ADD PATIENT BUTTON FOR DOCTORS IN DIRECTORY */}
+        {/* TOP ACTION BUTTONS */}
         <div className="flex items-center gap-3">
+          {currentUser.role === 'doctor' && selectedPatient && activeTab === 'chat' && (
+            <button
+              onClick={() => setShowVisitModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-bold rounded-lg transition-all shadow-xs active:scale-95 hover:opacity-90 cursor-pointer"
+              style={{ backgroundColor: '#059669' }}
+            >
+              <Stethoscope className="w-4 h-4 text-white" /> Log Visit Session
+            </button>
+          )}
+
           {activeTab === 'patients' && currentUser.role === 'doctor' && (
             <button
               onClick={() => setShowAddModal(true)}
@@ -525,7 +605,7 @@ export default function App() {
         {activeTab === 'chat' && (
           <div className="flex flex-col h-full max-w-4xl mx-auto px-4">
             
-            {/* DOCTOR ONLY: Patient Selector Strip */}
+            {/* DOCTOR ONLY: Patient Selector Strip & Visit Logger Shortcut */}
             {currentUser.role === 'doctor' ? (
               <div className="py-3 border-b border-gray-200 flex items-center justify-between">
                 <div className="flex items-center gap-2 overflow-x-auto py-1 no-scrollbar">
@@ -552,6 +632,16 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+
+                {selectedPatient && (
+                  <button
+                    onClick={() => handleOpenPatientHistory(selectedPatient)}
+                    className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold border border-emerald-600 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors cursor-pointer shrink-0"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    <span>{patientVisits.length} Visits Recorded</span>
+                  </button>
+                )}
               </div>
             ) : (
               /* OWNER VIEW: Restricted to AI Clinical Reference Mode */
@@ -574,7 +664,7 @@ export default function App() {
                     <h3 className="text-sm font-bold text-gray-900">VetMind Assistant Ready</h3>
                     <p className="text-xs text-gray-500 leading-relaxed">
                       {currentUser.role === 'doctor' && selectedPatient
-                        ? `Currently analyzing medical history for ${selectedPatient.name}. Ask questions or attach OCR notes.`
+                        ? `Currently analyzing medical history and past visits for ${selectedPatient.name}. Ask questions or attach OCR notes.`
                         : 'Ask general veterinary clinical questions or request pet guidance.'}
                     </p>
                   </div>
@@ -687,7 +777,7 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Patient Database</h2>
-                <p className="text-xs text-gray-500">Manage electronic health records stored in SQLite</p>
+                <p className="text-xs text-gray-500">Manage electronic health records and clinical visit logs stored in SQLite</p>
               </div>
 
               <div className="relative w-64">
@@ -712,7 +802,7 @@ export default function App() {
                     <th className="px-5 py-3.5">Breed</th>
                     <th className="px-5 py-3.5">Age</th>
                     <th className="px-5 py-3.5">Owner</th>
-                    <th className="px-5 py-3.5">Docs</th>
+                    <th className="px-5 py-3.5">Docs & Visits</th>
                     <th className="px-5 py-3.5 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -734,11 +824,11 @@ export default function App() {
                         <td className="px-5 py-3.5 text-gray-500">{p.owner_name || '—'}</td>
                         <td className="px-5 py-3.5">
                           <button
-                            onClick={() => setViewingPatientRecords(p)}
-                            className="px-2 py-0.5 border border-[#3B6255]/30 text-[#3B6255] bg-[#3B6255]/5 hover:bg-[#3B6255]/15 rounded text-[11px] font-mono font-bold cursor-pointer transition-colors inline-flex items-center gap-1"
+                            onClick={() => handleOpenPatientHistory(p)}
+                            className="px-2.5 py-1 border border-[#3B6255]/30 text-[#3B6255] bg-[#3B6255]/5 hover:bg-[#3B6255]/15 rounded-lg text-[11px] font-mono font-bold cursor-pointer transition-colors inline-flex items-center gap-1.5"
                           >
-                            <span>{p.records?.length || 0} Docs</span>
-                            <Eye className="w-3 h-3 text-[#3B6255]" />
+                            <Eye className="w-3.5 h-3.5 text-[#3B6255]" />
+                            <span>{p.records?.length || 0} Docs / Timeline</span>
                           </button>
                         </td>
                         <td className="px-5 py-3.5 text-right">
@@ -757,6 +847,7 @@ export default function App() {
                             <button
                               onClick={() => setEditingPatient(p)}
                               className="p-1.5 text-gray-600 hover:text-[#3B6255] hover:bg-gray-100 rounded-lg cursor-pointer border border-gray-200"
+                              title="Edit Patient Info"
                             >
                               <Edit className="w-3.5 h-3.5" />
                             </button>
@@ -764,6 +855,7 @@ export default function App() {
                             <button
                               onClick={() => handleDeletePatient(p.id, p.name)}
                               className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer border border-gray-200"
+                              title="Delete Patient Record"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -979,7 +1071,7 @@ export default function App() {
                     onChange={(e) => setNewPatient({ ...newPatient, breed: e.target.value })}
                     className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none"
                   >
-                    {(SPECIES_BREEDS[newPatient.species] || SPECIES_BREEDS['Feline']).map((b) => (
+                    {(SPECIES_BREEDS[newPatient.species] || SPECIES_BREEDS['Feline(cat)']).map((b) => (
                       <option key={b} value={b}>{b}</option>
                     ))}
                   </select>
@@ -1038,7 +1130,7 @@ export default function App() {
                 <div>
                   <label className="text-xs font-semibold text-gray-700">Species</label>
                   <select
-                    value={editingPatient.species || 'Feline'}
+                    value={editingPatient.species || 'Feline(cat)'}
                     onChange={(e) => {
                       const selectedSpecies = e.target.value;
                       const defaultBreed = SPECIES_BREEDS[selectedSpecies]?.[0] || '';
@@ -1059,7 +1151,7 @@ export default function App() {
                     onChange={(e) => setEditingPatient({ ...editingPatient, breed: e.target.value })}
                     className="w-full mt-1 px-3 py-2 border rounded-xl text-xs focus:outline-none"
                   >
-                    {(SPECIES_BREEDS[editingPatient.species] || SPECIES_BREEDS['Feline']).map((b) => (
+                    {(SPECIES_BREEDS[editingPatient.species] || SPECIES_BREEDS['Feline(cat)']).map((b) => (
                       <option key={b} value={b}>{b}</option>
                     ))}
                   </select>
@@ -1075,14 +1167,139 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL 3: VIEW CLINICAL RECORDS */}
+      {/* MODAL 3: LOG CLINICAL VISIT SESSION */}
+      {showVisitModal && selectedPatient && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="border border-gray-200 rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto space-y-4 shadow-xl bg-white">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-2">
+                <Stethoscope className="w-5 h-5 text-[#059669]" />
+                <h3 className="text-sm font-bold text-gray-900">
+                  Log Doctor Consultation Session — {selectedPatient.name} (#{selectedPatient.id})
+                </h3>
+              </div>
+              <button onClick={() => setShowVisitModal(false)} className="p-1 rounded-lg text-gray-400 hover:text-gray-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateClinicalVisit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700">Primary Complaint *</label>
+                <input
+                  type="text"
+                  required
+                  value={newVisit.primary_complaint}
+                  onChange={(e) => setNewVisit({ ...newVisit, primary_complaint: e.target.value })}
+                  placeholder="e.g. Frequent litter box visits, vocalizing, hematuria"
+                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700">Clinical Exam Findings *</label>
+                <textarea
+                  required
+                  rows="3"
+                  value={newVisit.clinical_findings}
+                  onChange={(e) => setNewVisit({ ...newVisit, clinical_findings: e.target.value })}
+                  placeholder="Physical exam notes, vitals, palpation, lab findings..."
+                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700">Diagnosis</label>
+                  <input
+                    type="text"
+                    value={newVisit.diagnosis}
+                    onChange={(e) => setNewVisit({ ...newVisit, diagnosis: e.target.value })}
+                    placeholder="e.g. FLUTD / Idiopathic Cystitis flare"
+                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700">Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={newVisit.weight_kg}
+                    onChange={(e) => setNewVisit({ ...newVisit, weight_kg: e.target.value })}
+                    placeholder="e.g. 3.5"
+                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700">Treatment Plan *</label>
+                <textarea
+                  required
+                  rows="3"
+                  value={newVisit.treatment_plan}
+                  onChange={(e) => setNewVisit({ ...newVisit, treatment_plan: e.target.value })}
+                  placeholder="Prescribed medications, dosage, diet transition, procedures..."
+                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700">Pruritus Itch Score (1-10)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={newVisit.pruritus_score}
+                    onChange={(e) => setNewVisit({ ...newVisit, pruritus_score: e.target.value })}
+                    placeholder="Optional itch rating"
+                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700">Follow-up Re-check Date</label>
+                  <input
+                    type="date"
+                    value={newVisit.follow_up_date}
+                    onChange={(e) => setNewVisit({ ...newVisit, follow_up_date: e.target.value })}
+                    className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700">Internal Doctor Notes</label>
+                <input
+                  type="text"
+                  value={newVisit.notes}
+                  onChange={(e) => setNewVisit({ ...newVisit, notes: e.target.value })}
+                  placeholder="Additional owner communication or follow-up notes..."
+                  className="w-full mt-1 px-3 py-2 border border-gray-300 rounded-xl text-xs focus:outline-none focus:border-[#059669]"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-3 border-t">
+                <button type="button" onClick={() => setShowVisitModal(false)} className="flex-1 py-2 border rounded-xl text-xs font-semibold">
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 py-2 text-white rounded-xl text-xs font-bold bg-[#059669] hover:bg-emerald-700 transition-colors">
+                  Save Visit Record
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: VIEW CLINICAL RECORDS & VISIT HISTORY TIMELINE */}
       {viewingPatientRecords && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="border border-gray-200 rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col space-y-4 shadow-xl bg-white">
+          <div className="border border-gray-200 rounded-2xl p-6 w-full max-w-3xl max-h-[85vh] flex flex-col space-y-4 shadow-xl bg-white">
             <div className="flex items-center justify-between border-b pb-3">
               <div>
                 <h3 className="text-sm font-bold text-gray-900">
-                  Extracted Clinical Records — {viewingPatientRecords.name} (#{viewingPatientRecords.id})
+                  Clinical History & Visit Timeline — {viewingPatientRecords.name} (#{viewingPatientRecords.id})
                 </h3>
               </div>
               <button onClick={() => setViewingPatientRecords(null)} className="p-1 rounded-lg text-gray-400 hover:text-gray-600">
@@ -1090,24 +1307,62 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-              {(!viewingPatientRecords.records || viewingPatientRecords.records.length === 0) ? (
-                <p className="text-xs text-gray-400 text-center py-10 font-medium">No OCR clinical notes uploaded for this patient yet.</p>
-              ) : (
-                viewingPatientRecords.records.map((rec) => (
-                  <div key={rec.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-2">
-                    <div className="flex items-center justify-between text-xs font-bold text-gray-900">
-                      <span className="flex items-center gap-1.5">
-                        <FileText className="w-3.5 h-3.5 text-[#3B6255]" />
-                        {rec.title}
-                      </span>
+            <div className="flex-1 overflow-y-auto space-y-6 pr-1">
+              {/* SECTION A: LOGGED DOCTOR VISITS */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                  <Stethoscope className="w-4 h-4 text-emerald-600" /> Recorded Consultation Visits ({patientVisits.length})
+                </h4>
+
+                {patientVisits.length === 0 ? (
+                  <p className="text-xs text-gray-400 font-medium italic bg-gray-50 p-3 rounded-xl border border-dashed">
+                    No doctor consultation sessions recorded yet.
+                  </p>
+                ) : (
+                  patientVisits.map((v) => (
+                    <div key={v.id} className="border border-emerald-200 bg-emerald-50/30 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-emerald-950 border-b border-emerald-200/60 pb-2">
+                        <span>Visit Date: {new Date(v.visit_date).toLocaleDateString()}</span>
+                        <span className="font-mono text-emerald-700">Weight: {v.weight_kg ? `${v.weight_kg} kg` : 'N/A'}</span>
+                      </div>
+                      <div className="text-xs space-y-1 text-gray-800">
+                        <p><strong>Complaint:</strong> {v.primary_complaint}</p>
+                        <p><strong>Findings:</strong> {v.clinical_findings}</p>
+                        <p><strong>Diagnosis:</strong> {v.diagnosis || 'N/A'}</p>
+                        <p><strong>Treatment Plan:</strong> {v.treatment_plan}</p>
+                        {v.follow_up_date && <p className="text-emerald-700"><strong>Follow-up:</strong> {v.follow_up_date}</p>}
+                      </div>
                     </div>
-                    <div className="p-3 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-800 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-                      {rec.content}
+                  ))
+                )}
+              </div>
+
+              {/* SECTION B: UPLOADED OCR DOCUMENTS */}
+              <div className="space-y-3 pt-2">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#3B6255] flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-[#3B6255]" /> Uploaded OCR Medical Notes ({viewingPatientRecords.records?.length || 0})
+                </h4>
+
+                {(!viewingPatientRecords.records || viewingPatientRecords.records.length === 0) ? (
+                  <p className="text-xs text-gray-400 font-medium italic bg-gray-50 p-3 rounded-xl border border-dashed">
+                    No OCR clinical files uploaded for this patient yet.
+                  </p>
+                ) : (
+                  viewingPatientRecords.records.map((rec) => (
+                    <div key={rec.id} className="border border-gray-200 rounded-xl p-4 bg-gray-50 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-gray-900">
+                        <span className="flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-[#3B6255]" />
+                          {rec.title}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-white border border-gray-200 rounded-lg text-xs font-mono text-gray-800 max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                        {rec.content}
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

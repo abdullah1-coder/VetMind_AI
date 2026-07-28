@@ -27,6 +27,7 @@ from app.database.database import get_db, engine, Base, SessionLocal
 from app.database.models import (
     Patient, 
     ClinicalRecord, 
+    ClinicalVisit,
     GeneratedReport, 
     ChatMessage, 
     User, 
@@ -35,6 +36,7 @@ from app.database.models import (
 from app.database.schemas import (
     PatientCreate, PatientOut, 
     ClinicalRecordOut, 
+    ClinicalVisitCreate, ClinicalVisitOut,
     ChatQueryRequest, ChatQueryResponse
 )
 
@@ -242,7 +244,7 @@ def seed_demo_doctor_and_patients():
                     breed=p_data["breed"],
                     age=p_data["age"],
                     owner_name=p_data["owner_name"],
-                    doctor_id=doctor.id  # STRONGLY ASSIGNED TO DEMO DOCTOR
+                    doctor_id=doctor.id
                 )
                 db.add(patient)
                 db.flush()
@@ -265,7 +267,6 @@ def seed_demo_doctor_and_patients():
     finally:
         db.close()
 
-# Execute Database Auto-Seeding
 seed_demo_doctor_and_patients()
 
 
@@ -293,20 +294,20 @@ orchestrator = VetMindWorkflow()
 
 
 # ============================================================
-# PYDANTIC SCHEMAS
+# PYDANTIC SCHEMAS FOR AUTH & APPOINTMENTS
 # ============================================================
 
 class LoginRequest(BaseModel):
     email: str
     password: str
-    role: str  # "doctor" or "owner"
+    role: str
 
 
 class RegisterRequest(BaseModel):
     full_name: str
     email: str
     password: str
-    role: str  # "doctor" or "owner"
+    role: str
 
 
 class AppointmentCreate(BaseModel):
@@ -318,12 +319,7 @@ class AppointmentCreate(BaseModel):
     appointment_time: str
 
 
-# ============================================================
-# HELPER: CURRENT USER RESOLUTION
-# ============================================================
-
 def get_current_user(x_user_id: Optional[int] = Header(None), db: Session = Depends(get_db)) -> Optional[User]:
-    """Resolves logged in User context from header or defaults to demo doctor."""
     if x_user_id:
         return db.query(User).filter(User.id == x_user_id).first()
     return None
@@ -335,7 +331,6 @@ def get_current_user(x_user_id: Optional[int] = Header(None), db: Session = Depe
 
 @app.post("/auth/register")
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
-    """Registers a new user (Doctor or Pet Owner)."""
     existing_user = db.query(User).filter(User.email == req.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="User with this email already exists.")
@@ -363,11 +358,9 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
 
 @app.post("/auth/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
-    """Authenticates user with email & password check."""
     user = db.query(User).filter(User.email == req.email).first()
     
     if not user:
-        # Register new account dynamically if not found
         user = User(
             email=req.email,
             password_hash=req.password,
@@ -392,7 +385,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
 
 
 # ============================================================
-# 2. PATIENT EHR ENDPOINTS (MULTI-TENANT ISOLATED)
+# 2. PATIENT EHR ENDPOINTS
 # ============================================================
 
 @app.post("/patients", response_model=PatientOut, status_code=status.HTTP_201_CREATED)
@@ -401,7 +394,6 @@ def create_patient(
     user_id: Optional[int] = Header(None, alias="X-User-ID"),
     db: Session = Depends(get_db)
 ):
-    """Creates a new patient associated with the creating user."""
     user = db.query(User).filter(User.id == user_id).first() if user_id else None
     
     patient_dict = patient_in.dict()
@@ -423,9 +415,7 @@ def list_patients(
     user_id: Optional[int] = Header(None, alias="X-User-ID"),
     db: Session = Depends(get_db)
 ):
-    """Returns patient profiles filtered strictly by the logged-in user's account."""
     if not user_id:
-        # Fallback to demo doctor if no header is supplied
         demo_doc = db.query(User).filter(User.email == "abdullahbinshahbaz12@gmail.com").first()
         user_id = demo_doc.id if demo_doc else None
 
@@ -433,11 +423,8 @@ def list_patients(
     if not user:
         return []
 
-    # Doctors see ONLY patients assigned to their doctor_id
     if user.role == "doctor":
         return db.query(Patient).filter(Patient.doctor_id == user.id).order_by(Patient.created_at.desc()).all()
-    
-    # Pet Owners see ONLY patients linked to their owner_id
     elif user.role == "owner":
         return db.query(Patient).filter(Patient.owner_id == user.id).order_by(Patient.created_at.desc()).all()
 
@@ -446,7 +433,6 @@ def list_patients(
 
 @app.get("/patients/{patient_id}", response_model=PatientOut)
 def get_patient(patient_id: int, db: Session = Depends(get_db)):
-    """Fetches full details for a specific patient."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient record not found.")
@@ -455,7 +441,6 @@ def get_patient(patient_id: int, db: Session = Depends(get_db)):
 
 @app.put("/patients/{patient_id}", response_model=PatientOut)
 def update_patient(patient_id: int, patient_in: PatientCreate, db: Session = Depends(get_db)):
-    """Updates an existing patient record."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient record not found.")
@@ -473,12 +458,12 @@ def update_patient(patient_id: int, patient_in: PatientCreate, db: Session = Dep
 
 @app.delete("/patients/{patient_id}", status_code=status.HTTP_200_OK)
 def delete_patient(patient_id: int, db: Session = Depends(get_db)):
-    """Deletes a patient record and all associated history."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient record not found.")
 
     db.query(ClinicalRecord).filter(ClinicalRecord.patient_id == patient_id).delete()
+    db.query(ClinicalVisit).filter(ClinicalVisit.patient_id == patient_id).delete()
     if hasattr(ChatMessage, "patient_id"):
         db.query(ChatMessage).filter(ChatMessage.patient_id == patient_id).delete()
 
@@ -489,7 +474,85 @@ def delete_patient(patient_id: int, db: Session = Depends(get_db)):
 
 
 # ============================================================
-# 3. APPOINTMENT BOOKING ENDPOINTS
+# 3. CLINICAL VISIT ENDPOINTS (DOCTOR CONSULTATIONS)
+# ============================================================
+
+@app.post("/patients/{patient_id}/visits", response_model=ClinicalVisitOut, status_code=status.HTTP_201_CREATED)
+def create_clinical_visit(
+    patient_id: int, 
+    visit_in: ClinicalVisitCreate, 
+    user_id: Optional[int] = Header(None, alias="X-User-ID"),
+    db: Session = Depends(get_db)
+):
+    """Logs a new doctor consultation session for a patient and formats it for RAG search."""
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+
+    doctor_id = visit_in.doctor_id
+    if not doctor_id and user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and user.role == "doctor":
+            doctor_id = user.id
+
+    db_visit = ClinicalVisit(
+        patient_id=patient_id,
+        doctor_id=doctor_id,
+        appointment_id=visit_in.appointment_id,
+        primary_complaint=visit_in.primary_complaint,
+        clinical_findings=visit_in.clinical_findings,
+        diagnosis=visit_in.diagnosis,
+        treatment_plan=visit_in.treatment_plan,
+        weight_kg=visit_in.weight_kg,
+        pruritus_score=visit_in.pruritus_score,
+        follow_up_date=visit_in.follow_up_date,
+        notes=visit_in.notes
+    )
+    db.add(db_visit)
+    db.commit()
+    db.refresh(db_visit)
+
+    # Automatically summarize visit into ClinicalRecord so RAG pipeline can query it
+    visit_summary_content = (
+        f"Primary Complaint: {db_visit.primary_complaint}\n"
+        f"Clinical Findings: {db_visit.clinical_findings}\n"
+        f"Diagnosis: {db_visit.diagnosis or 'N/A'}\n"
+        f"Treatment Plan: {db_visit.treatment_plan}\n"
+        f"Weight: {db_visit.weight_kg if db_visit.weight_kg else 'N/A'} kg\n"
+        f"Pruritus Score: {db_visit.pruritus_score if db_visit.pruritus_score else 'N/A'}\n"
+        f"Follow-up Date: {db_visit.follow_up_date or 'N/A'}\n"
+        f"Doctor Notes: {db_visit.notes or 'None'}"
+    )
+
+    auto_record = ClinicalRecord(
+        patient_id=patient_id,
+        title=f"Doctor Visit Note - {db_visit.visit_date.strftime('%Y-%m-%d')}",
+        content=visit_summary_content,
+        source_file="doctor_consultation_form"
+    )
+    db.add(auto_record)
+    db.commit()
+
+    return db_visit
+
+
+@app.get("/patients/{patient_id}/visits", response_model=List[ClinicalVisitOut])
+def get_patient_visits(patient_id: int, db: Session = Depends(get_db)):
+    """Retrieves all past consultation visits for a patient in reverse chronological order."""
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+
+    return (
+        db.query(ClinicalVisit)
+        .filter(ClinicalVisit.patient_id == patient_id)
+        .order_by(ClinicalVisit.visit_date.desc())
+        .all()
+    )
+
+
+# ============================================================
+# 4. APPOINTMENT BOOKING ENDPOINTS
 # ============================================================
 
 @app.post("/appointments", status_code=status.HTTP_201_CREATED)
@@ -498,7 +561,6 @@ def create_appointment(
     user_id: Optional[int] = Header(None, alias="X-User-ID"),
     db: Session = Depends(get_db)
 ):
-    """Saves a new appointment request."""
     apt_data = req.dict()
     if user_id:
         apt_data["user_id"] = user_id
@@ -515,18 +577,15 @@ def get_appointments(
     user_id: Optional[int] = Header(None, alias="X-User-ID"),
     db: Session = Depends(get_db)
 ):
-    """Retrieves appointments filtered by user."""
     user = db.query(User).filter(User.id == user_id).first() if user_id else None
     if user and user.role == "owner":
         return db.query(Appointment).filter(Appointment.user_id == user.id).order_by(Appointment.created_at.desc()).all()
     
-    # Doctors see all appointments
     return db.query(Appointment).order_by(Appointment.created_at.desc()).all()
 
 
 @app.put("/appointments/{apt_id}/status")
 def update_appointment_status(apt_id: int, status: str, db: Session = Depends(get_db)):
-    """Updates appointment status."""
     apt = db.query(Appointment).filter(Appointment.id == apt_id).first()
     if not apt:
         raise HTTPException(status_code=404, detail="Appointment not found.")
@@ -538,7 +597,7 @@ def update_appointment_status(apt_id: int, status: str, db: Session = Depends(ge
 
 
 # ============================================================
-# 4. OCR FILE INGESTION ROUTE
+# 5. OCR FILE INGESTION ROUTE
 # ============================================================
 
 @app.post("/ocr/upload", response_model=ClinicalRecordOut)
@@ -548,7 +607,6 @@ async def upload_and_process_ocr(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Processes uploaded document image/PDF via OCR."""
     patient = db.query(Patient).filter(Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Target patient not found.")
@@ -583,12 +641,11 @@ async def upload_and_process_ocr(
 
 
 # ============================================================
-# 5. AGENTIC CHAT & CASE REPLAY WORKFLOW
+# 6. AGENTIC CHAT & CASE REPLAY WORKFLOW
 # ============================================================
 
 @app.post("/chat", response_model=ChatQueryResponse)
 def execute_chat_query(req: ChatQueryRequest, db: Session = Depends(get_db)):
-    """Orchestrates multi-turn clinical chat across agent nodes."""
     session_id = getattr(req, "session_id", None) or str(uuid.uuid4())
     target_patient = None
     patient_id_found = None
@@ -602,6 +659,7 @@ def execute_chat_query(req: ChatQueryRequest, db: Session = Depends(get_db)):
         if target_patient:
             patient_id_found = target_patient.id
             records = db.query(ClinicalRecord).filter(ClinicalRecord.patient_id == target_patient.id).all()
+            visits = db.query(ClinicalVisit).filter(ClinicalVisit.patient_id == target_patient.id).all()
             
             patient_header = (
                 f"### PATIENT EHR DEMOGRAPHICS:\n"
@@ -613,14 +671,24 @@ def execute_chat_query(req: ChatQueryRequest, db: Session = Depends(get_db)):
                 f"- **Owner:** {getattr(target_patient, 'owner_name', None) or 'N/A'}\n"
             )
 
+            records_text = ""
             if records:
-                records_text = "\n\n".join([
+                records_text = "\n\n### CLINICAL RECORDS & OCR DOCUMENTS:\n" + "\n\n".join([
                     f"--- Record ({r.created_at.strftime('%Y-%m-%d')}): {r.title} ---\n{r.content}" 
                     for r in records
                 ])
-                ehr_history = f"{patient_header}\n### CLINICAL RECORDS:\n{records_text}"
-            else:
-                ehr_history = f"{patient_header}\n- **Clinical Notes Status:** Registered in SQLite. No uploaded OCR files."
+
+            visits_text = ""
+            if visits:
+                visits_text = "\n\n### DOCTOR VISIT SESSIONS HISTORY:\n" + "\n\n".join([
+                    f"--- Visit ({v.visit_date.strftime('%Y-%m-%d')}):\n"
+                    f"Complaint: {v.primary_complaint}\nFindings: {v.clinical_findings}\n"
+                    f"Diagnosis: {v.diagnosis or 'N/A'}\nPlan: {v.treatment_plan}\n"
+                    f"Weight: {v.weight_kg or 'N/A'} kg\nFollow-up: {v.follow_up_date or 'N/A'}"
+                    for v in visits
+                ])
+
+            ehr_history = f"{patient_header}{records_text}{visits_text}"
         else:
             ehr_history = "General multi-species veterinary clinical reference context."
 
@@ -698,12 +766,11 @@ def execute_chat_query(req: ChatQueryRequest, db: Session = Depends(get_db)):
 
 
 # ============================================================
-# 6. REPORT DOWNLOAD ROUTE
+# 7. REPORT DOWNLOAD ROUTE
 # ============================================================
 
 @app.get("/api/reports/download/{filename}")
 def download_generated_report(filename: str):
-    """Serves compiled PDF medical reports directly to UI."""
     possible_paths = [
         Path("app/RAG/agents/generated_reports") / filename,
         Path("app/RAG/generated_reports") / filename,
