@@ -701,7 +701,7 @@ def execute_chat_query(req: ChatQueryRequest, db: Session = Depends(get_db)):
 # 6. REPORT DOWNLOAD ROUTE
 # ============================================================
 
-@app.get("/reports/download/{filename}")
+@app.get("/api/reports/download/{filename}")
 def download_generated_report(filename: str):
     """Serves compiled PDF medical reports directly to UI."""
     possible_paths = [
