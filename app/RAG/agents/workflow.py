@@ -98,14 +98,16 @@ class VetMindWorkflow:
         }
 
     # Node 2: Hybrid Vector DB & BM25 Knowledge Retrieval with RunnableConfig
+    # Node 2: Hybrid Vector DB & BM25 Knowledge Retrieval with RunnableConfig
     def _textbook_context_node(self, state: AgentState, config: RunnableConfig = None) -> Dict[str, Any]:
         logger.info("Node 2 [ContextAgent]: Fetching hybrid vector/BM25 chunks...")
-        history_str = str(state.get("chat_history", ""))
-        search_query = f"{history_str}\nFollow-up Question: {state['user_query']}" if history_str else state["user_query"]
+        
+        # FIX: Pass ONLY the raw user query into the retriever. 
+        # Do NOT concatenate history_str here!
+        search_query = state["user_query"]
         
         textbook_context = self.context_agent.assemble_grounding_context(search_query)
         return {"retrieved_textbook_context": textbook_context}
-
     # Node 3: SQLite Longitudinal Timeline Analysis with RunnableConfig
     def _timeline_node(self, state: AgentState, config: RunnableConfig = None) -> Dict[str, Any]:
         patient_id = state.get("patient_id")

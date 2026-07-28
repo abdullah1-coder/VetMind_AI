@@ -132,14 +132,15 @@ def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
     if search_query is None:
         search_query = kwargs.get("query", "")
 
-    if not search_query.strip():
+    search_query = search_query.strip()
+    if not search_query:
         return []
 
-    logger.info(f"Executing hybrid retriever query: '{search_query}'")
+    logger.info(f"Executing hybrid retriever query: '{search_query[:100]}...'")
 
-    # 1. Similarity Search without restrictive filter blocking results
+    # 1. Similarity Search with a reasonable candidate pool (k=10 instead of k=20 for CPU speed)
     try:
-        candidates = GLOBAL_VECTOR_DB.similarity_search(search_query, k=20)
+        candidates = GLOBAL_VECTOR_DB.similarity_search(search_query, k=10)
     except Exception as e:
         logger.error(f"ChromaDB lookup error: {e}")
         candidates = []
@@ -149,17 +150,21 @@ def get_hybrid_retriever(search_query: str = None, k: int = 4, **kwargs):
         return []
 
     # 2. Dynamic BM25 index on returned vector candidates
-    bm25_retriever = BM25Retriever.from_documents(candidates)
-    bm25_retriever.k = k
+    try:
+        bm25_retriever = BM25Retriever.from_documents(candidates)
+        bm25_retriever.k = min(k, len(candidates))
 
-    vector_retriever = GLOBAL_VECTOR_DB.as_retriever(search_kwargs={"k": k})
+        vector_retriever = GLOBAL_VECTOR_DB.as_retriever(search_kwargs={"k": k})
 
-    ensemble_retriever = EnsembleRetriever(
-        retrievers=[vector_retriever, bm25_retriever],
-        weights=[0.6, 0.4]
-    )
+        ensemble_retriever = EnsembleRetriever(
+            retrievers=[vector_retriever, bm25_retriever],
+            weights=[0.6, 0.4]
+        )
 
-    return ensemble_retriever.invoke(search_query)
+        return ensemble_retriever.invoke(search_query)
+    except Exception as e:
+        logger.error(f"Error executing ensemble retrieval: {e}")
+        return candidates[:k]
 
 # %% Standalone Script Execution Verification Block
 if __name__ == "__main__":
