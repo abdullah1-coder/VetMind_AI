@@ -5,7 +5,7 @@ import uuid
 import datetime
 from pathlib import Path
 from typing import List, Optional
-
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, status, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -276,13 +276,20 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for React frontend
+origins = [
+    "https://vetmind-ai.up.railway.app",
+    "https://vetmindai-production.up.railway.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 REPORTS_DIR = os.path.join(os.getcwd(), "static", "reports")
